@@ -26,6 +26,7 @@ import {
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { createRequire } from "node:module"
+import { writeFileSync } from "node:fs"
 
 // This plugin shows provider quota and usage for the OpenCode workspace
 // (go/zen plan quota; usage + model breakdown for every authenticated
@@ -336,6 +337,14 @@ export function renderRow(context: any, row: Row, sessionID?: string): string {
 export default Plugin.define({
   id: "opencode-go.usage.tui",
   setup(context: any) {
+    try {
+      writeFileSync(
+        "/tmp/quota-keys-debug.json",
+        JSON.stringify({ keys: apiKeys().length, dbIds: Object.keys(readDbKeys()) }),
+      )
+    } catch (e) {
+      try { writeFileSync("/tmp/quota-keys-debug.json", "ERR " + String(e)) } catch {}
+    }
     usageCache = createUsageStore(context)
 
     // Polling fetcher: throttles, guards concurrent fetches, and keeps the
