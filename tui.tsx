@@ -103,7 +103,9 @@ function readDbKeys(): Record<string, string> {
       const key = JSON.parse(String(row.value ?? ""))?.key
       if (id && typeof key === "string" && key.trim()) out[id] = key.trim()
     }
-    try { (db as any).close?.() } catch {}
+    try {
+      ;(db as any).close?.()
+    } catch {}
     return out
   } catch {
     return {}
