@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin } from "@opencode-ai/plugin/tui"
-import { createSignal } from "solid-js"
+import { createSignal, createRoot } from "solid-js"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -9,7 +9,6 @@ const ZEN_PROVIDER = "opencode"
 const GO_PROVIDER = "opencode-go"
 const USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
 const POLL_MS = 60_000
-const STALE_AFTER_MS = 2 * 60_000
 
 function bar(p: number): string {
   const filled = Math.round(Math.max(0, Math.min(100, p))/10)
@@ -69,42 +68,23 @@ async function fetchUsage(): Promise<GoUsage | null> {
   }
   return null
 }
-
-// --- Local free-tier tracking (vendored from kit, adapted for stable api.state) ---
 function unwrap(m: any): any { return m?.info ?? m }
 function isAssistant(m: any): boolean { return (m?.type ?? m?.role) === "assistant" }
 function modelId(m: any): string { return m?.model?.modelID ?? m?.modelID ?? m?.model?.id ?? m?.id ?? "" }
 function providerId(m: any): string { return m?.model?.providerID ?? m?.providerID ?? "" }
-function isFreeModel(id: string): boolean {
-  const m = String(id||"").toLowerCase()
-  return m.endsWith("-free") || m === "big-pickle"
-}
+function isFreeModel(id: string): boolean { const m = String(id||"").toLowerCase(); return m.endsWith("-free") || m === "big-pickle" }
 function parseCooldown(text: string): number | null {
   if (!text) return null
   const now = Date.now()
   const absolute = text.match(/reset[^.\d]*(\d{4}-\d{2}-\d{2}[\dT .:+-]*Z)/i)
-  if (absolute) {
-    const ms = Date.parse(absolute[1])
-    if (Number.isFinite(ms) && ms > now - 3600_000) return ms
-  }
+  if (absolute) { const ms = Date.parse(absolute[1]); if (Number.isFinite(ms) && ms > now - 3600_000) return ms }
   const rel = text.match(/retry in (\d+)\s*(\w+)?s?/i)
-  if (rel) {
-    const mult: Record<string, number> = { minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000 }
-    const unit = (rel[2] ?? "").toLowerCase().replace(/s$/, "")
-    const factor = mult[unit]
-    if (factor !== undefined) return now + Number(rel[1]) * factor
-  }
+  if (rel) { const mult: Record<string, number> = { minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000 }; const unit = (rel[2] ?? "").toLowerCase().replace(/s$/, ""); const factor = mult[unit]; if (factor !== undefined) return now + Number(rel[1]) * factor }
   if (/limit (reached|exceeded)|usagelimiterror/i.test(text)) return now + 3600_000
   return null
 }
 interface FreeWindows { h5: number; week: number; month: number }
-interface FreeModelUsage {
-  totals: FreeWindows
-  byModel: Record<string, FreeWindows>
-  cooldowns: Record<string, number>
-}
-// For stable, we walk only the current session's messages via api.state.session.messages(sessionID)
-// This is a simplification of beta's walk over all sessions via context.data.session.list()
+interface FreeModelUsage { totals: FreeWindows; byModel: Record<string, FreeWindows>; cooldowns: Record<string, number> }
 function providerUsage(api: any, sessionID: string | undefined, providerID: string): FreeModelUsage {
   const totals: FreeWindows = { h5: 0, week: 0, month: 0 }
   const byModel: Record<string, FreeWindows> = {}
@@ -123,7 +103,7 @@ function providerUsage(api: any, sessionID: string | undefined, providerID: stri
   try {
     const sid = sessionID
     if (!sid) return { totals, byModel, cooldowns }
-    const messages = api.state.session.messages(sid) ?? []
+    const messages = api.state?.session?.messages?.(sid) ?? []
     for (const entry of messages) {
       const m = unwrap(entry)
       const model = modelId(m)
@@ -151,102 +131,100 @@ function providerUsage(api: any, sessionID: string | undefined, providerID: stri
 }
 
 export const tui: TuiPlugin = async (api) => {
-  const [usage, setUsage] = createSignal<GoUsage | null>(null)
-  const [err, setErr] = createSignal<string | null>(null)
+  return createRoot((dispose) => {
+    const [usage, setUsage] = createSignal<GoUsage | null>(null)
+    const [err, setErr] = createSignal<string | null>(null)
 
-  let timer: ReturnType<typeof setInterval> | null = null
+    let timer: ReturnType<typeof setInterval> | null = null
 
-  async function poll() {
-    const u = await fetchUsage()
-    if (u) {
-      setUsage(u)
-      setErr(null)
-    } else {
-      if (!usage()) setErr("quota —")
-    }
-  }
-
-  await poll()
-  timer = setInterval(poll, POLL_MS)
-  api.lifecycle.onDispose(() => { if (timer) clearInterval(timer) })
-
-  try {
-    api.keymap.registerLayer(() => ({
-      mode: "global",
-      priority: 0,
-      commands: [{
-        id: "usage.view",
-        title: "Usage footer: refresh",
-        description: "Refresh Go quota",
-        group: "Usage",
-        slash: { name: "usage-view", aliases: ["usage"] },
-        run: () => { poll(); api.ui.toast({ message: "Usage refreshed" }) }
-      }]
-    }))
-  } catch {}
-
-  api.slots.register({
-    slots: {
-      sidebar_footer: (ctx, props) => {
-        const sid = (props as any)?.session_id ?? (props as any)?.sessionID
-        const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
-
-        // Always show something so sidebar is visible
-        if (keys.length===0) {
-          // Show local free-tier for current session even without auth
-          const fw = providerUsage(api, sid, ZEN_PROVIDER)
-          const hasLocal = fw.totals.h5 > 0 || Object.keys(fw.byModel).length > 0
-          if (!hasLocal) return <text>quota — no key · /connect</text> as any
-          const localLines = [
-            `free 5h ${fmt(fw.totals.h5)} tok`,
-            `free 1w ${fmt(fw.totals.week)} tok`,
-            `free 1mo ${fmt(fw.totals.month)} tok`,
-            ...Object.entries(fw.byModel).filter(([,w])=>w.h5>0).sort((a,b)=>b[1].h5-a[1].h5).slice(0,3).map(([id,w])=>`${id} ${fmt(w.h5)}`)
-          ]
-          return <text>{localLines.join("\n")}</text> as any
-        }
-
-        const u = usage()
-        if (!u?.usage) {
-          return <text>{err() ?? "quota —"}</text> as any
-        }
-        const windows: Array<[string, Window | undefined]> = [
-          ["5h", u.usage?.rolling],
-          ["1w", u.usage?.weekly],
-          ["1mo", u.usage?.monthly],
-        ]
-        const known = windows.filter(([,w]) => w && typeof w.percent === "number") as Array<[string, Window]>
-        if (known.length===0) {
-          // Fallback to local free-tier when Go quota not yet fetched
-          const fw = providerUsage(api, sid, ZEN_PROVIDER)
-          if (fw.totals.h5 > 0) {
-            return <text>{`free 5h ${fmt(fw.totals.h5)} tok\nfree 1w ${fmt(fw.totals.week)} tok`}</text> as any
-          }
-          return <text>quota —</text> as any
-        }
-        const quotaLines = known.map(([label, w]) => {
-          const p = w.percent ?? 0
-          const b = bar(p)
-          const eta = until(w.resetsAt)
-          const warn = w.status && w.status !== "ok" ? " ⚠" : ""
-          return `${label} ${b} ${p}%${warn}${eta ? ` · resets ${eta}` : ""}`
-        })
-
-        // Append local per-model breakdown for current session (free-tier)
-        const fw = providerUsage(api, sid, ZEN_PROVIDER)
-        const modelRows = Object.entries(fw.byModel)
-          .filter(([,w])=>w.h5>0 || (fw.cooldowns[Object.keys(fw.byModel).find(k=>k===Object.keys(fw.byModel)[0]) ?? ""] ?? 0) > Date.now())
-          .sort((a,b)=>b[1].h5-a[1].h5)
-          .slice(0,5)
-          .map(([id,w])=>{
-            const cd = fw.cooldowns[id]
-            const cdTxt = cd && cd > Date.now() ? ` ⏳${until(new Date(cd).toISOString())}` : ""
-            return `${id} ${fmt(w.h5)}${cdTxt}`
-          })
-
-        const allLines = [...quotaLines, ...modelRows]
-        return <text>{allLines.join("\n")}</text> as any
+    async function poll() {
+      const u = await fetchUsage()
+      if (u) {
+        setUsage(u)
+        setErr(null)
+      } else {
+        if (!usage()) setErr("quota —")
       }
     }
+
+    poll()
+    timer = setInterval(poll, POLL_MS)
+    api.lifecycle.onDispose(() => {
+      if (timer) clearInterval(timer)
+      dispose()
+    })
+
+    try {
+      api.keymap.registerLayer(() => ({
+        mode: "global",
+        priority: 0,
+        commands: [{
+          id: "usage.view",
+          title: "Usage footer: refresh",
+          description: "Refresh Go quota",
+          group: "Usage",
+          slash: { name: "usage-view", aliases: ["usage"] },
+          run: () => { poll(); api.ui.toast({ message: "Usage refreshed" }) }
+        }]
+      }))
+    } catch {}
+
+    api.slots.register({
+      slots: {
+        sidebar_footer: (ctx, props) => {
+          const sid = (props as any)?.session_id ?? (props as any)?.sessionID
+          const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
+          if (keys.length===0) {
+            const fw = providerUsage(api, sid, ZEN_PROVIDER)
+            const hasLocal = fw.totals.h5 > 0 || Object.keys(fw.byModel).length > 0
+            if (!hasLocal) return <text>quota — no key · /connect</text> as any
+            const localLines = [
+              `free 5h ${fmt(fw.totals.h5)} tok`,
+              `free 1w ${fmt(fw.totals.week)} tok`,
+              `free 1mo ${fmt(fw.totals.month)} tok`,
+              ...Object.entries(fw.byModel).filter(([,w])=>w.h5>0).sort((a,b)=>b[1].h5-a[1].h5).slice(0,3).map(([id,w])=>`${id} ${fmt(w.h5)}`)
+            ]
+            return <text>{localLines.join("\n")}</text> as any
+          }
+          const u = usage()
+          if (!u?.usage) {
+            return <text>{err() ?? "quota —"}</text> as any
+          }
+          const windows: Array<[string, Window | undefined]> = [
+            ["5h", u.usage?.rolling],
+            ["1w", u.usage?.weekly],
+            ["1mo", u.usage?.monthly],
+          ]
+          const known = windows.filter(([,w]) => w && typeof w.percent === "number") as Array<[string, Window]>
+          if (known.length===0) {
+            const fw = providerUsage(api, sid, ZEN_PROVIDER)
+            if (fw.totals.h5 > 0) {
+              return <text>{`free 5h ${fmt(fw.totals.h5)} tok\nfree 1w ${fmt(fw.totals.week)} tok`}</text> as any
+            }
+            return <text>quota —</text> as any
+          }
+          const quotaLines = known.map(([label, w]) => {
+            const p = w.percent ?? 0
+            const b = bar(p)
+            const eta = until(w.resetsAt)
+            const warn = w.status && w.status !== "ok" ? " ⚠" : ""
+            return `${label} ${b} ${p}%${warn}${eta ? ` · resets ${eta}` : ""}`
+          })
+          const fw = providerUsage(api, sid, ZEN_PROVIDER)
+          const modelRows = Object.entries(fw.byModel)
+            .filter(([,w])=>w.h5>0)
+            .sort((a,b)=>b[1].h5-a[1].h5)
+            .slice(0,5)
+            .map(([id,w])=>{
+              const cd = fw.cooldowns[id]
+              const cdTxt = cd && cd > Date.now() ? ` ⏳${until(new Date(cd).toISOString())}` : ""
+              return `${id} ${fmt(w.h5)}${cdTxt}`
+            })
+          const allLines = [...quotaLines, ...modelRows]
+          return <text>{allLines.join("\n")}</text> as any
+        }
+      }
+    })
+    return
   })
 }
