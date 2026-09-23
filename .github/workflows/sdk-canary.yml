@@ -19,16 +19,16 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Probe new @opencode-ai/plugin beta
+      - name: Probe latest @opencode/plugin
         id: probe
         run: |
           set -e
-          VER=$(npm view @opencode-ai/plugin dist-tags.beta)
+          VER=$(npm view @opencode/plugin dist-tags.latest)
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "Testing against @opencode-ai/plugin@$VER"
+          echo "Testing against @opencode/plugin@$VER"
           mkdir -p /tmp/canary && cd /tmp/canary
           npm init -y > /dev/null
-          npm install --no-save --legacy-peer-deps "@opencode-ai/plugin@$VER" solid-js@1.9.15 zod@^4 "opencode-usage-quota-tracker@alpha"
+          npm install --no-save --legacy-peer-deps "@opencode/plugin@$VER" solid-js@1.9.15 zod@^4 "opencode-usage-quota-tracker@alpha"
           bun -e "import('opencode-usage-quota-tracker').then(m => { if (typeof m.default?.setup !== 'function') throw new Error('default export has no setup()') })"
           echo "canary green"
 
@@ -42,6 +42,6 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git checkout -b "canary/sdk-bump-$SDK_VERSION"
           python3 scripts/bump-pin.py
-          git commit -am "chore: bump @opencode-ai/plugin pin to $SDK_VERSION (canary green)"
+          git commit -am "chore: bump @opencode/plugin pin to $SDK_VERSION (canary green)"
           git push -u origin "canary/sdk-bump-$SDK_VERSION" --force 2>\&1 | tail -1
-          gh pr create --title "chore: bump @opencode-ai/plugin pin to $SDK_VERSION" --body "Nightly SDK canary passed: published package imports cleanly against @opencode-ai/plugin@$SDK_VERSION." || true
+          gh pr create --title "chore: bump @opencode/plugin pin to $SDK_VERSION" --body "Nightly SDK canary passed: published package imports cleanly against @opencode/plugin@$SDK_VERSION." || true
