@@ -255,5 +255,5 @@ export const tui: TuiPlugin = async (api) => {
     return
   })
 }
-// V2 TUI loader expects default export with tui (not setup, to avoid server invoking TUI)
-export default { id: "opencode-go.usage", tui } as any
+// V2 TUI loader expects default export – keep both tui and setup for VAt (id+setup) check
+export default { id: "opencode-go.usage", tui, setup: tui } as any
