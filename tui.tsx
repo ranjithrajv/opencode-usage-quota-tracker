@@ -25,6 +25,7 @@ import {
 } from "opencode-plugin-kit"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { createRequire } from "node:module"
 
 // This plugin shows provider quota and usage for the OpenCode workspace
 // (go/zen plan quota; usage + model breakdown for every authenticated
@@ -70,10 +71,28 @@ export function apiKeys(): string[] {
 }
 let _keysCache: { at: number; keys: string[] } | null = null
 
+/** Resolve Bun's SQLite driver across ESM/CJS module systems. */
+function loadBunDatabase(): any {
+  const attempts: Array<() => any> = [
+    () => (import.meta as any).require?.("bun:sqlite"),
+    () => (globalThis as any).require?.("bun:sqlite"),
+    () => createRequire(import.meta.url)("bun:sqlite"),
+    () => (Function("return require")() as any)("bun:sqlite"),
+  ]
+  for (const attempt of attempts) {
+    try {
+      const mod = attempt()
+      if (mod?.Database) return mod.Database
+    } catch {}
+  }
+  return null
+}
+
 /** API keys from the OpenCode 2 SQLite credential store, keyed by provider. */
 function readDbKeys(): Record<string, string> {
   try {
-    const { Database } = (Function('return require')() as any)("bun:sqlite")
+    const Database = loadBunDatabase()
+    if (!Database) return {}
     const db = new Database(join(homedir(), ".local/share/opencode/opencode.db"), { readonly: true } as any)
     const out: Record<string, string> = {}
     for (const row of db.query("SELECT integration_id, value FROM credential").all() as any[]) {
