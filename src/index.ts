@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 
 // Server-side entrypoint. All behavior lives in the TUI entrypoint
 // (src/tui.tsx), which renders live provider quota usage into the
