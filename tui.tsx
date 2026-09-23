@@ -196,9 +196,8 @@ export const tui: TuiPlugin = async (api) => {
       }))
     } catch {}
 
-    api.slots.register({
-      slots: {
-        sidebar_footer: (ctx, props) => {
+    try {
+      const footer = (ctx: any, props: any) => {
           const sid = (props as any)?.session_id ?? (props as any)?.sessionID
           const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
           if (keys.length===0) {
@@ -250,8 +249,12 @@ export const tui: TuiPlugin = async (api) => {
           const allLines = [...quotaLines, ...modelRows]
           return <text>{allLines.join("\n")}</text> as any
         }
-      }
-    })
+      const a: any = api as any
+      if (a.slots?.register) a.slots.register({ slots: { sidebar_footer: footer } })
+      else if (a.ui?.slot) a.ui.slot({ slot: "sidebar_footer", render: footer } as any)
+      else if (a.slot) a.slot({ slot: "sidebar_footer", render: footer } as any)
+      try { a.ui?.toast?.({ message: "quota tracker loaded" } as any) } catch {}
+    } catch {}
     return
   })
 }
