@@ -104,7 +104,7 @@ export const tui: TuiPlugin = async (api) => {
     slots: {
       sidebar_footer: (ctx, props) => {
         const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
-        if (keys.length===0) return null as any
+        if (keys.length===0) return <text>quota — no key · /connect</text> as any
 
         const u = usage()
         if (!u?.usage) {
