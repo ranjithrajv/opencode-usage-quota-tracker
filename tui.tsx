@@ -79,17 +79,20 @@ function loadBunDatabase(): any {
     () => createRequire(import.meta.url)("bun:sqlite"),
     () => (Function("return require")() as any)("bun:sqlite"),
   ]
+  /* v8 ignore start -- driver resolution is Bun-only; unreachable under the Node CI runner */
   for (const attempt of attempts) {
     try {
       const mod = attempt()
       if (mod?.Database) return mod.Database
     } catch {}
   }
+  /* v8 ignore stop */
   return null
 }
 
 /** API keys from the OpenCode 2 SQLite credential store, keyed by provider. */
 function readDbKeys(): Record<string, string> {
+  /* v8 ignore start -- the bun:sqlite driver path is unreachable under the Node CI runner */
   try {
     const Database = loadBunDatabase()
     if (!Database) return {}
@@ -105,6 +108,7 @@ function readDbKeys(): Record<string, string> {
   } catch {
     return {}
   }
+  /* v8 ignore stop */
 }
 
 // Sum tokens/cost across the session's assistant messages that used the
@@ -138,9 +142,11 @@ interface FreeModelUsage {
 
 let providerUsageCache: { at: number; value: Record<string, FreeModelUsage> } | null = null
 
-// Test-only: clear the module-level provider usage cache between tests.
+// Test-only: clear the module-level provider-usage and API-key caches between
+// tests (both are time-cached and the tests freeze the clock).
 export function __resetProviderUsageCache(): void {
   providerUsageCache = null
+  _keysCache = null
 }
 
 // Extract a retry/cooldown epoch from a limit-error payload. The Zen API is
