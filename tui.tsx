@@ -175,10 +175,11 @@ export const tui: TuiPlugin = async (api) => {
 
     poll()
     timer = setInterval(poll, POLL_MS)
-    api.lifecycle.onDispose(() => {
-      if (timer) clearInterval(timer)
-      dispose()
-    })
+    try {
+      const onDispose = (api as any)?.lifecycle?.onDispose
+      if (typeof onDispose === "function") onDispose(() => { if (timer) clearInterval(timer); dispose() })
+      else if ((api as any)?.lifecycle?.signal) (api as any).lifecycle.signal.addEventListener("abort", () => { if (timer) clearInterval(timer); dispose() }, { once: true } as any)
+    } catch {}
 
     try {
       api.keymap.registerLayer(() => ({
@@ -254,5 +255,5 @@ export const tui: TuiPlugin = async (api) => {
     return
   })
 }
-// V2 TUI loader expects default export – provide both shapes (tui + setup) for compatibility
-export default { id: "opencode-go.usage", tui, setup: tui } as any
+// V2 TUI loader expects default export with tui (not setup, to avoid server invoking TUI)
+export default { id: "opencode-go.usage", tui } as any
