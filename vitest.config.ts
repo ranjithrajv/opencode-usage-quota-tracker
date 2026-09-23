@@ -33,6 +33,9 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    // The kit ships TypeScript source; inline it so Vite transpiles it
+    // (a linked checkout is processed anyway, but a registry install isn't).
+    server: { deps: { inline: [/opencode-plugin-kit/] } },
     include: ["**/*.test.ts", "**/*.test.tsx"],
     coverage: {
       provider: "v8",
