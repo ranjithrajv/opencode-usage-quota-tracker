@@ -157,6 +157,8 @@ function providerUsage(api: any, sessionID: string | undefined, providerID: stri
 }
 
 export const tui: TuiPlugin = async (api) => {
+  try { const t:any=(api as any).ui?.toast??(api as any).toast; if(t) t({message:"quota tracker db4bad3 loaded"}); else (api as any).ui?.toast?.({message:"quota tracker db4bad3 loaded"} as any) } catch {}
+  try { const k=Object.keys(api as any).join(","); (api as any).ui?.toast?.({message:`api keys:${k.slice(0,120)}`} as any) } catch {}
   return createRoot((dispose) => {
     const [usage, setUsage] = createSignal<GoUsage | null>(null)
     const [err, setErr] = createSignal<string | null>(null)
