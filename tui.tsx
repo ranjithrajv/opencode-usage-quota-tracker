@@ -1,5 +1,4 @@
 /** @jsxImportSource @opentui/solid */
-import type { TuiPlugin } from "@opencode-ai/plugin/tui"
 import { createSignal, createRoot } from "solid-js"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -9,6 +8,31 @@ const ZEN_PROVIDER = "opencode"
 const GO_PROVIDER = "opencode-go"
 const USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
 const POLL_MS = 60_000
+
+// ---------------------------------------------------------------------------
+// V2 CLI plugin host contract (structural minimum this plugin touches).
+// The runtime calls `default.setup(context)`; only these fields are used.
+// Slot ids are dotted in V2 (`sidebar.footer`), and `ui.slot` needs exactly
+// one placement key (append/prepend/before/after/replace).
+// ---------------------------------------------------------------------------
+type SlotRenderProps = { sessionID?: string; session_id?: string }
+type SlotPlacement = { append?: string; prepend?: string; before?: string; after?: string; replace?: string }
+interface HostContext {
+  ui: {
+    slot(options: SlotPlacement & { render: (props: SlotRenderProps) => unknown }): (() => void) | void
+    toast?: {
+      show(input: { message: string; title?: string; variant?: "info" | "success" | "warning" | "error"; duration?: number }): void
+    }
+  }
+  keymap?: {
+    layer(register: () => { mode: string; priority?: number; commands: unknown[] }): void
+  }
+  data?: {
+    session?: {
+      message?: { list(sessionID: string): readonly unknown[] | undefined }
+    }
+  }
+}
 
 function bar(p: number): string {
   const filled = Math.round(Math.max(0, Math.min(100, p))/10)
@@ -111,7 +135,7 @@ function parseCooldown(text: string): number | null {
 }
 interface FreeWindows { h5: number; week: number; month: number }
 interface FreeModelUsage { totals: FreeWindows; byModel: Record<string, FreeWindows>; cooldowns: Record<string, number> }
-function providerUsage(api: any, sessionID: string | undefined, providerID: string): FreeModelUsage {
+function providerUsage(context: HostContext, sessionID: string | undefined, providerID: string): FreeModelUsage {
   const totals: FreeWindows = { h5: 0, week: 0, month: 0 }
   const byModel: Record<string, FreeWindows> = {}
   const cooldowns: Record<string, number> = {}
@@ -129,7 +153,8 @@ function providerUsage(api: any, sessionID: string | undefined, providerID: stri
   try {
     const sid = sessionID
     if (!sid) return { totals, byModel, cooldowns }
-    const messages = api.state?.session?.messages?.(sid) ?? []
+    // V2: context.data.session.message.list(sessionID)
+    const messages = context.data?.session?.message?.list?.(sid) ?? []
     for (const entry of messages) {
       const m = unwrap(entry)
       const model = modelId(m)
@@ -156,13 +181,33 @@ function providerUsage(api: any, sessionID: string | undefined, providerID: stri
   return { totals, byModel, cooldowns }
 }
 
-export const tui: TuiPlugin = async (api) => {
-  try { const t:any=(api as any).ui?.toast??(api as any).toast; if(t) t({message:"quota tracker db4bad3 loaded"}); else (api as any).ui?.toast?.({message:"quota tracker db4bad3 loaded"} as any) } catch {}
-  try { const k=Object.keys(api as any).join(","); (api as any).ui?.toast?.({message:`api keys:${k.slice(0,120)}`} as any) } catch {}
+/**
+ * V2 CLI plugin entrypoint. `setup` receives the V2 host context:
+ *   context.ui.slot({ <placement>: "sidebar.footer", render })
+ *   context.ui.toast.show({ message })
+ *   context.keymap.layer(...)  — must run inside a rendered slot ("app")
+ *   context.data.session.message.list(sessionID)
+ */
+export const tui = async (context: HostContext): Promise<void | (() => void)> => {
+  try {
+    const fs = (Function('return require')() as any)("node:fs")
+    fs.writeFileSync("/tmp/quota-v2-debug.log", JSON.stringify({
+      at: new Date().toISOString(),
+      contextKeys: Object.keys(context as any),
+      uiKeys: Object.keys(((context as any).ui) ?? {}),
+      hasUiSlot: typeof (context as any).ui?.slot,
+      hasToastShow: typeof (context as any).ui?.toast?.show,
+      hasKeymapLayer: typeof (context as any).keymap?.layer,
+      hasMessageList: typeof (context as any).data?.session?.message?.list,
+    }))
+  } catch {}
+  try {
+    context.ui.toast?.show?.({ message: "quota tracker loaded", variant: "success" })
+  } catch {}
+
   return createRoot((dispose) => {
     const [usage, setUsage] = createSignal<GoUsage | null>(null)
     const [err, setErr] = createSignal<string | null>(null)
-
     let timer: ReturnType<typeof setInterval> | null = null
 
     async function poll() {
@@ -175,90 +220,100 @@ export const tui: TuiPlugin = async (api) => {
       }
     }
 
-    poll()
-    timer = setInterval(poll, POLL_MS)
+    void poll()
+    timer = setInterval(() => void poll(), POLL_MS)
+
+    // Slash/palette command. A keymap layer is only active while a plugin slot
+    // is rendered, so register it from an `app` slot.
     try {
-      const onDispose = (api as any)?.lifecycle?.onDispose
-      if (typeof onDispose === "function") onDispose(() => { if (timer) clearInterval(timer); dispose() })
-      else if ((api as any)?.lifecycle?.signal) (api as any).lifecycle.signal.addEventListener("abort", () => { if (timer) clearInterval(timer); dispose() }, { once: true } as any)
+      context.ui.slot({
+        append: "app",
+        render: () => {
+          try {
+            context.keymap?.layer?.(() => ({
+              mode: "global",
+              priority: 0,
+              commands: [{
+                id: "usage.view",
+                title: "Usage footer: refresh",
+                description: "Refresh Go quota",
+                group: "Usage",
+                slash: { name: "usage-view", aliases: ["usage"] },
+                run: () => { void poll(); context.ui.toast?.show?.({ message: "Usage refreshed" }) }
+              }]
+            }))
+          } catch {}
+          return null
+        },
+      })
     } catch {}
 
-    try {
-      api.keymap.registerLayer(() => ({
-        mode: "global",
-        priority: 0,
-        commands: [{
-          id: "usage.view",
-          title: "Usage footer: refresh",
-          description: "Refresh Go quota",
-          group: "Usage",
-          slash: { name: "usage-view", aliases: ["usage"] },
-          run: () => { poll(); api.ui.toast({ message: "Usage refreshed" }) }
-        }]
-      }))
-    } catch {}
-
-    try {
-      const footer = (ctx: any, props: any) => {
-          const sid = (props as any)?.session_id ?? (props as any)?.sessionID
-          const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
-          if (keys.length===0) {
-            const fw = providerUsage(api, sid, ZEN_PROVIDER)
-            const hasLocal = fw.totals.h5 > 0 || Object.keys(fw.byModel).length > 0
-            if (!hasLocal) return <text>quota — no key · /connect</text> as any
-            const localLines = [
-              `free 5h ${fmt(fw.totals.h5)} tok`,
-              `free 1w ${fmt(fw.totals.week)} tok`,
-              `free 1mo ${fmt(fw.totals.month)} tok`,
-              ...Object.entries(fw.byModel).filter(([,w])=>w.h5>0).sort((a,b)=>b[1].h5-a[1].h5).slice(0,3).map(([id,w])=>`${id} ${fmt(w.h5)}`)
-            ]
-            return <text>{localLines.join("\n")}</text> as any
-          }
-          const u = usage()
-          if (!u?.usage) {
-            return <text>{err() ?? "quota —"}</text> as any
-          }
-          const windows: Array<[string, Window | undefined]> = [
-            ["5h", u.usage?.rolling],
-            ["1w", u.usage?.weekly],
-            ["1mo", u.usage?.monthly],
-          ]
-          const known = windows.filter(([,w]) => w && typeof w.percent === "number") as Array<[string, Window]>
-          if (known.length===0) {
-            const fw = providerUsage(api, sid, ZEN_PROVIDER)
-            if (fw.totals.h5 > 0) {
-              return <text>{`free 5h ${fmt(fw.totals.h5)} tok\nfree 1w ${fmt(fw.totals.week)} tok`}</text> as any
-            }
-            return <text>quota —</text> as any
-          }
-          const quotaLines = known.map(([label, w]) => {
-            const p = w.percent ?? 0
-            const b = bar(p)
-            const eta = until(w.resetsAt)
-            const warn = w.status && w.status !== "ok" ? " ⚠" : ""
-            return `${label} ${b} ${p}%${warn}${eta ? ` · resets ${eta}` : ""}`
-          })
-          const fw = providerUsage(api, sid, ZEN_PROVIDER)
-          const modelRows = Object.entries(fw.byModel)
-            .filter(([,w])=>w.h5>0)
-            .sort((a,b)=>b[1].h5-a[1].h5)
-            .slice(0,5)
-            .map(([id,w])=>{
-              const cd = fw.cooldowns[id]
-              const cdTxt = cd && cd > Date.now() ? ` ⏳${until(new Date(cd).toISOString())}` : ""
-              return `${id} ${fmt(w.h5)}${cdTxt}`
-            })
-          const allLines = [...quotaLines, ...modelRows]
-          return <text>{allLines.join("\n")}</text> as any
+    const footer = (props: SlotRenderProps) => {
+      const sid = props?.sessionID ?? props?.session_id
+      const keys = authKeys([ZEN_PROVIDER, GO_PROVIDER])
+      if (keys.length===0) {
+        const fw = providerUsage(context, sid, ZEN_PROVIDER)
+        const hasLocal = fw.totals.h5 > 0 || Object.keys(fw.byModel).length > 0
+        if (!hasLocal) return <text>quota — no key · /connect</text> as any
+        const localLines = [
+          `free 5h ${fmt(fw.totals.h5)} tok`,
+          `free 1w ${fmt(fw.totals.week)} tok`,
+          `free 1mo ${fmt(fw.totals.month)} tok`,
+          ...Object.entries(fw.byModel).filter(([,w])=>w.h5>0).sort((a,b)=>b[1].h5-a[1].h5).slice(0,3).map(([id,w])=>`${id} ${fmt(w.h5)}`)
+        ]
+        return <text>{localLines.join("\n")}</text> as any
+      }
+      const u = usage()
+      if (!u?.usage) {
+        return <text>{err() ?? "quota —"}</text> as any
+      }
+      const windows: Array<[string, Window | undefined]> = [
+        ["5h", u.usage?.rolling],
+        ["1w", u.usage?.weekly],
+        ["1mo", u.usage?.monthly],
+      ]
+      const known = windows.filter(([,w]) => w && typeof w.percent === "number") as Array<[string, Window]>
+      if (known.length===0) {
+        const fw = providerUsage(context, sid, ZEN_PROVIDER)
+        if (fw.totals.h5 > 0) {
+          return <text>{`free 5h ${fmt(fw.totals.h5)} tok\nfree 1w ${fmt(fw.totals.week)} tok`}</text> as any
         }
-      const a: any = api as any
-      if (a.slots?.register) a.slots.register({ slots: { sidebar_footer: footer } })
-      else if (a.ui?.slot) a.ui.slot({ slot: "sidebar_footer", render: footer } as any)
-      else if (a.slot) a.slot({ slot: "sidebar_footer", render: footer } as any)
-      try { a.ui?.toast?.({ message: "quota tracker loaded" } as any) } catch {}
+        return <text>quota —</text> as any
+      }
+      const quotaLines = known.map(([label, w]) => {
+        const p = w.percent ?? 0
+        const b = bar(p)
+        const eta = until(w.resetsAt)
+        const warn = w.status && w.status !== "ok" ? " ⚠" : ""
+        return `${label} ${b} ${p}%${warn}${eta ? ` · resets ${eta}` : ""}`
+      })
+      const fw = providerUsage(context, sid, ZEN_PROVIDER)
+      const modelRows = Object.entries(fw.byModel)
+        .filter(([,w])=>w.h5>0)
+        .sort((a,b)=>b[1].h5-a[1].h5)
+        .slice(0,5)
+        .map(([id,w])=>{
+          const cd = fw.cooldowns[id]
+          const cdTxt = cd && cd > Date.now() ? ` ⏳${until(new Date(cd).toISOString())}` : ""
+          return `${id} ${fmt(w.h5)}${cdTxt}`
+        })
+      return <text>{[...quotaLines, ...modelRows].join("\n")}</text> as any
+    }
+
+    let unregister: (() => void) | void
+    try {
+      unregister = context.ui.slot({ replace: "sidebar.footer", render: footer })
     } catch {}
-    return
+
+    return () => {
+      if (timer) clearInterval(timer)
+      try { unregister?.() } catch {}
+      dispose()
+    }
   })
 }
-// V2 TUI loader expects default export – keep both tui and setup for VAt (id+setup) check
-export default { id: "opencode-go.usage", tui, setup: tui } as any
+
+// The V2 TUI loader requires `default` to be an object with a non-empty
+// string `id` and a `setup` function (see $At in the runtime), then calls
+// `default.setup(context)`.
+export default { id: "opencode-go.usage", setup: tui } as any
