@@ -190,18 +190,6 @@ function providerUsage(context: HostContext, sessionID: string | undefined, prov
  */
 export const tui = async (context: HostContext): Promise<void | (() => void)> => {
   try {
-    const fs = (Function('return require')() as any)("node:fs")
-    fs.writeFileSync("/tmp/quota-v2-debug.log", JSON.stringify({
-      at: new Date().toISOString(),
-      contextKeys: Object.keys(context as any),
-      uiKeys: Object.keys(((context as any).ui) ?? {}),
-      hasUiSlot: typeof (context as any).ui?.slot,
-      hasToastShow: typeof (context as any).ui?.toast?.show,
-      hasKeymapLayer: typeof (context as any).keymap?.layer,
-      hasMessageList: typeof (context as any).data?.session?.message?.list,
-    }))
-  } catch {}
-  try {
     context.ui.toast?.show?.({ message: "quota tracker loaded", variant: "success" })
   } catch {}
 
