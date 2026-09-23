@@ -23,6 +23,8 @@ import {
   unwrap,
   ZEN_PROVIDER,
 } from "opencode-plugin-kit"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 // This plugin shows provider quota and usage for the OpenCode workspace
 // (go/zen plan quota; usage + model breakdown for every authenticated
@@ -55,7 +57,35 @@ interface GoTotals {
 // provider key first, then fall back to the Go provider key, so the widget
 // also works for users who only have a Zen key.
 export function apiKeys(): string[] {
-  return authKeys([ZEN_PROVIDER, GO_PROVIDER])
+  const now = Date.now()
+  if (_keysCache && now - _keysCache.at < 30_000) return _keysCache.keys
+  const ordered = [ZEN_PROVIDER, GO_PROVIDER]
+  // OpenCode 2 stores credentials in the SQLite credential table; auth.json
+  // is the legacy V1 store. Read both, preferring the SQLite keys.
+  const db = readDbKeys()
+  const keys = [...ordered.map((id) => db[id]).filter(Boolean), ...authKeys(ordered)]
+  const unique = [...new Set(keys)]
+  _keysCache = { at: now, keys: unique }
+  return unique
+}
+let _keysCache: { at: number; keys: string[] } | null = null
+
+/** API keys from the OpenCode 2 SQLite credential store, keyed by provider. */
+function readDbKeys(): Record<string, string> {
+  try {
+    const { Database } = (Function('return require')() as any)("bun:sqlite")
+    const db = new Database(join(homedir(), ".local/share/opencode/opencode.db"), { readonly: true } as any)
+    const out: Record<string, string> = {}
+    for (const row of db.query("SELECT integration_id, value FROM credential").all() as any[]) {
+      const id = String(row.integration_id ?? "").trim()
+      const key = JSON.parse(String(row.value ?? ""))?.key
+      if (id && typeof key === "string" && key.trim()) out[id] = key.trim()
+    }
+    try { (db as any).close?.() } catch {}
+    return out
+  } catch {
+    return {}
+  }
 }
 
 // Sum tokens/cost across the session's assistant messages that used the
