@@ -24,7 +24,7 @@ function until(iso?: string): string | null {
   if (s < 86400) return `${Math.floor(s/3600)}h`
   return `${Math.floor(s/86400)}d`
 }
-function readAuth(): Record<string,string> {
+function readAuthFile(): Record<string,string> {
   try {
     const p = join(homedir(), ".local/share/opencode/auth.json")
     const j = JSON.parse(readFileSync(p, "utf8"))
@@ -35,6 +35,32 @@ function readAuth(): Record<string,string> {
     }
     return out
   } catch { return {} }
+}
+function readAuthDb(): Record<string,string> {
+  try {
+    const dbPath = join(homedir(), ".local/share/opencode/opencode.db")
+    const { Database } = (Function('return require')() as any)("bun:sqlite")
+    const db = new Database(dbPath, { readonly: true } as any)
+    const rows = db.query("SELECT integration_id, value FROM credential").all() as any[]
+    const out: Record<string,string> = {}
+    for (const r of rows) {
+      const id = String(r.integration_id ?? "").trim()
+      if (!id) continue
+      try {
+        const parsed = JSON.parse(String(r.value ?? ""))
+        const key = (parsed as any)?.key ?? parsed
+        if (typeof key === "string" && key.trim()) out[id] = key.trim()
+      } catch {
+        const raw = String(r.value ?? "").trim()
+        if (raw) out[id] = raw
+      }
+    }
+    try { (db as any).close?.() } catch {}
+    return out
+  } catch { return {} }
+}
+function readAuth(): Record<string,string> {
+  return { ...readAuthFile(), ...readAuthDb() }
 }
 function authKeys(ids: string[]): string[] {
   const a = readAuth()
@@ -228,3 +254,5 @@ export const tui: TuiPlugin = async (api) => {
     return
   })
 }
+// V2 TUI loader expects default export – provide both shapes (tui + setup) for compatibility
+export default { id: "opencode-go.usage", tui, setup: tui } as any
