@@ -1,6 +1,6 @@
 {
   "name": "opencode-usage-quota-tracker",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0-alpha.5",
   "description": "Live provider quota and usage tracker (tokens, cost, 5h/1w/1mo windows) for OpenCode plans, in the sidebar footer.",
   "keywords": [
     "cost",
@@ -36,15 +36,15 @@
     "test:coverage": "vitest run --coverage.enabled"
   },
   "dependencies": {
-    "@opencode/plugin": "2.0.15",
-    "opencode-plugin-kit": "^1.0.0-alpha.6"
+    "@opencode/plugin": "^2.0.15",
+    "opencode-plugin-kit": "^1.0.0-alpha.6",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
     "@opentui/core": "^0.5.11",
     "@opentui/solid": "^0.5.11",
     "@vitest/coverage-v8": "^5.0.0",
     "happy-dom": "^20.14.0",
-    "solid-js": "1.9.15",
     "typescript": "^5.9.3",
     "vite": "^7.0.0",
     "vite-plugin-solid": "^2.11.14",
@@ -52,9 +52,8 @@
     "vitest": "^5.0.0"
   },
   "peerDependencies": {
-    "@opentui/core": "^0.5.10",
-    "@opentui/solid": "^0.5.10",
-    "solid-js": "^1.9.12"
+    "@opentui/core": "^0.5.11",
+    "@opentui/solid": "^0.5.11"
   },
   "packageManager": "npm@12.0.2"
 }

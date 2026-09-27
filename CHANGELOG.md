@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.5] - 2026-09-27
+
+### Changed
+
+- Widened the `@opencode/plugin` dependency from an exact `2.0.15` pin to
+  `^2.0.15`. The exact pin forced a second nested copy of the host package
+  whenever the runtime was on a different patch, and `Plugin.define` identity
+  could diverge from the runtime's own. The range means the host the runtime
+  provides is the one that gets used.
+- Aligned the `@opentui/*` peer ranges with the other plugins (`^0.5.10` →
+  `^0.5.11`).
+- `solid-js` moved from a peer to a dependency: the kit's barrel export pulls in
+  its signal primitives, so a peer-only declaration left it uninstalled.
+
 ## [1.0.0-alpha.4] - 2026-09-27
 
 ### Breaking
@@ -36,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - View picker with provider-key gating and session-following auto-pick
 - Polling fetcher with multi-key fallback, degrading to the last-known-good cache on parse failure
 
-[Unreleased]: https://github.com/ranjithraj/opencode-usage-quota-tracker/compare/v1.0.0-alpha.4...HEAD
+[Unreleased]: https://github.com/ranjithraj/opencode-usage-quota-tracker/compare/v1.0.0-alpha.5...HEAD
+[1.0.0-alpha.5]: https://github.com/ranjithraj/opencode-usage-quota-tracker/releases/tag/v1.0.0-alpha.5
 [1.0.0-alpha.4]: https://github.com/ranjithraj/opencode-usage-quota-tracker/releases/tag/v1.0.0-alpha.4
 [0.1.0]: https://github.com/ranjithraj/opencode-usage-quota-tracker/releases/tag/v0.1.0
