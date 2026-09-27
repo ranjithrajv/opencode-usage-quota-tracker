@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.4] - 2026-09-27
+
+### Breaking
+
+- Requires an OpenCode v2 host. The TUI/context types moved from the legacy
+  `@opencode-ai/plugin` package to `@opencode/plugin@2.0.15`, so this plugin
+  no longer loads on a v1 runtime.
+
+### Changed
+
+- Sidebar rendering and keymap wiring use the v2 `ui.slot` / `keymap.layer`
+  contract.
+
+### Fixed
+
+- API keys are read from OpenCode 2's SQLite `credential` table via
+  `opencode-plugin-kit@^1.0.0-alpha.6`. v2 no longer keeps them in
+  `auth.json`, so on a v2 host the footer previously reported no connected
+  providers and rendered empty. Covered by a cold-start regression test.
+
 ## [0.1.0] - 2026-09-08
 
 ### Added
@@ -16,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - View picker with provider-key gating and session-following auto-pick
 - Polling fetcher with multi-key fallback, degrading to the last-known-good cache on parse failure
 
-[Unreleased]: https://github.com/ranjithraj/opencode-usage-quota-tracker/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ranjithraj/opencode-usage-quota-tracker/compare/v1.0.0-alpha.4...HEAD
+[1.0.0-alpha.4]: https://github.com/ranjithraj/opencode-usage-quota-tracker/releases/tag/v1.0.0-alpha.4
 [0.1.0]: https://github.com/ranjithraj/opencode-usage-quota-tracker/releases/tag/v0.1.0
