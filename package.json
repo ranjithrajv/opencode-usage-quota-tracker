@@ -27,13 +27,13 @@
     "./tui": "./tui.tsx"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vp test",
     "check": "vp check",
     "check:fix": "vp check --fix",
     "fmt": "vp fmt",
     "lint": "vp lint",
     "typecheck": "tsc --noEmit",
-    "test:coverage": "vitest run --coverage.enabled"
+    "test:coverage": "vp exec vitest run --coverage"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.3",

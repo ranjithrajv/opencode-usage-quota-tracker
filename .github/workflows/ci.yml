@@ -11,15 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          # Keep the runner's own Node (this workflow never pinned one) and let
+          # Vite+ manage the package manager declared in package.json.
+          node-manager: false
+          run-install: false
+          cache: true
+
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: vp install
 
       - name: Check (format, lint, types)
-        run: npm run check
+        run: vp check
 
       # The 100% coverage gate: fails on any threshold shortfall.
+      # `vp exec vitest`, not `vp test --coverage`: vite-plus 0.1.24 leaves
+      # coverageFilesDirectory unset there and every threshold reads 0%.
       - name: Test with coverage
-        run: npx vitest run --coverage.enabled
+        run: vp exec vitest run --coverage
 
       # Typecheck cannot catch a peer-only runtime dependency: the dev tree
       # always resolves it. This packs the real tarball, installs it clean,
