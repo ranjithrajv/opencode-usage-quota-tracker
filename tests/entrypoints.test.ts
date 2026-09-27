@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import server from "../src/index.ts"
 import root from "../index.ts"
 
