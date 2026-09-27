@@ -25,4 +25,4 @@ jobs:
       # always resolves it. This packs the real tarball, installs it clean,
       # and imports both entrypoints under Bun (the TUI loader's runtime).
       - name: Runtime host-compat probe
-        run: node ../scripts/host-compat.mjs .
+        run: node scripts/host-compat.mjs .
